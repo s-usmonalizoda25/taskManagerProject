@@ -10,7 +10,6 @@ import (
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/service"
 	"github.com/s-usmonalizoda25/taskManagerProject/pkg/errs"
 	"github.com/s-usmonalizoda25/taskManagerProject/pkg/logger"
-	"go.uber.org/zap"
 )
 
 type TaskHandler struct {
@@ -25,14 +24,15 @@ func NewTaskHandler(s service.ITaskService, log *logger.Logger) *TaskHandler {
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	var t models.Task
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-		h.log.Error("Failed to decode create task body", zap.Error(err))
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
 	if err := h.service.CreateTask(r.Context(), &t); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(t)
@@ -91,15 +91,28 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid task ID format", http.StatusBadRequest)
 		return
 	}
+
 	var input models.Task
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
 	if err := h.service.UpdateTask(r.Context(), uint(id), &input); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if errors.Is(err, errs.ErrEmptyTitle) || errors.Is(err, errs.ErrInvalidStatus) || errors.Is(err, errs.ErrInvalidID) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, errs.ErrTaskNotFound) {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "task updated successfully"}`))
 }
@@ -141,4 +154,3 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "task hard-deleted from database"}`))
 }
-
