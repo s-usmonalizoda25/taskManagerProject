@@ -2,13 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/models"
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/service"
-	"github.com/s-usmonalizoda25/taskManagerProject/pkg/errs"
 	"github.com/s-usmonalizoda25/taskManagerProject/pkg/logger"
 )
 
@@ -29,7 +27,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.CreateTask(r.Context(), &t); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		HandleError(w, h.log, err)
 		return
 	}
 
@@ -57,9 +55,10 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		HandleError(w, h.log, err)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tasks)
 }
@@ -71,15 +70,13 @@ func (h *TaskHandler) GetTaskByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid task ID format", http.StatusBadRequest)
 		return
 	}
+
 	task, err := h.service.GetTaskByID(r.Context(), uint(id))
 	if err != nil {
-		if errors.Is(err, errs.ErrTaskNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		HandleError(w, h.log, err)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(task)
 }
@@ -99,16 +96,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.UpdateTask(r.Context(), uint(id), &input); err != nil {
-		if errors.Is(err, errs.ErrEmptyTitle) || errors.Is(err, errs.ErrInvalidStatus) || errors.Is(err, errs.ErrInvalidID) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if errors.Is(err, errs.ErrTaskNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		HandleError(w, h.log, err)
 		return
 	}
 
@@ -124,14 +112,13 @@ func (h *TaskHandler) DeactivateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid task ID format", http.StatusBadRequest)
 		return
 	}
+
 	if err := h.service.DeactivateTask(r.Context(), uint(id)); err != nil {
-		if errors.Is(err, errs.ErrTaskNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		HandleError(w, h.log, err)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "task deactivated successfully (soft-deleted)"}`))
 }
@@ -143,14 +130,13 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid task ID format", http.StatusBadRequest)
 		return
 	}
+
 	if err := h.service.DeleteTask(r.Context(), uint(id)); err != nil {
-		if errors.Is(err, errs.ErrTaskNotFound) {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		HandleError(w, h.log, err)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "task hard-deleted from database"}`))
 }
