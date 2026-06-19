@@ -11,15 +11,23 @@ import (
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/models"
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/repository"
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/service"
+	"github.com/s-usmonalizoda25/taskManagerProject/pkg/logger"
 	"github.com/s-usmonalizoda25/taskManagerProject/router"
+	"go.uber.org/zap"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func main() {
+	mainLog, err := logger.New(true)
+	if err != nil {
+		log.Fatalf("failed to initialize zap logger: %v", err)
+	}
+	defer mainLog.Sync()
+
 	if err := godotenv.Load("config/config.env"); err != nil {
-		log.Fatalf("Error loading config.env file: %v", err)
+		mainLog.Fatal("Error loading config.env file", zap.Error(err))
 	}
 
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
@@ -32,23 +40,23 @@ func main() {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		mainLog.Fatal("failed to connect to database", zap.Error(err))
 	}
 
 	err = db.AutoMigrate(&models.Task{})
 	if err != nil {
-		log.Fatalf("failed to migrate database: %v", err)
+		mainLog.Fatal("failed to migrate database", zap.Error(err))
 	}
-	log.Println("Database migration completed successfully!")
+	mainLog.Info("Database migration completed successfully!")
 
 	taskRepo := repository.NewTaskRepository(db)
-	taskService := service.NewTaskService(taskRepo)
-	taskHandler := handlers.NewTaskHandler(taskService)
+	taskService := service.NewTaskService(taskRepo, mainLog)
+	taskHandler := handlers.NewTaskHandler(taskService, mainLog)
 
 	appRouter := router.NewRouter(taskHandler)
 
-	log.Println("Server is running on port :8080...")
+	mainLog.Info("Server is running on port :8080...")
 	if err := http.ListenAndServe(":8080", appRouter); err != nil {
-		log.Fatalf("failed to start server: %v", err)
+		mainLog.Fatal("failed to start server", zap.Error(err))
 	}
 }

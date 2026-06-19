@@ -3,19 +3,21 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/models"
+	"github.com/s-usmonalizoda25/taskManagerProject/pkg/errs"
 	"gorm.io/gorm"
 )
 
-var ErrTaskNotFound = errors.New("task not found")
-
 type ITaskRepository interface {
 	Create(ctx context.Context, task *models.Task) error
-	GetAll(ctx context.Context, status string, limit, offset int) ([]models.Task, error)
-	GetById(ctx context.Context, id uint) (*models.Task, error)
+	GetActive(ctx context.Context, status string, limit, offset int) ([]models.Task, error)
+	GetAll(ctx context.Context, status string, limit, offset int) ([]models.Task, error)  
+	GetByID(ctx context.Context, id uint) (*models.Task, error)
 	Update(ctx context.Context, task *models.Task) error
-	Delete(ctx context.Context, id uint) error
+	Deactivate(ctx context.Context, id uint) error
+	Delete(ctx context.Context, id uint) error  
 }
 
 type taskRepository struct {
@@ -27,49 +29,72 @@ func NewTaskRepository(db *gorm.DB) ITaskRepository {
 }
 
 func (r *taskRepository) Create(ctx context.Context, task *models.Task) error {
+	task.UpdatedAt = nil
+	task.DeletedAt = nil
 	return r.db.WithContext(ctx).Create(task).Error
+}
+
+func (r *taskRepository) GetActive(ctx context.Context, status string, limit, offset int) ([]models.Task, error) {
+	var tasks []models.Task
+	query := r.db.WithContext(ctx).Where("deleted_at IS NULL").Limit(limit).Offset(offset)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	err := query.Find(&tasks).Error
+	return tasks, err
 }
 
 func (r *taskRepository) GetAll(ctx context.Context, status string, limit, offset int) ([]models.Task, error) {
 	var tasks []models.Task
-	tx := r.db.WithContext(ctx).Order("id DESC").Limit(limit).Offset(offset)
-
+	query := r.db.WithContext(ctx).Limit(limit).Offset(offset)
 	if status != "" {
-		tx = tx.Where("status = ?", status)
+		query = query.Where("status = ?", status)
 	}
-
-	err := tx.Find(&tasks).Error
-	if err != nil {
-		return nil, err
-	}
-	return tasks, nil
+	err := query.Find(&tasks).Error
+	return tasks, err
 }
-func (r *taskRepository) GetById(ctx context.Context, id uint) (*models.Task, error) {
-	var task models.Task
 
-	err := r.db.WithContext(ctx).First(&task, id).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrTaskNotFound
-		}
-		return nil, err
+func (r *taskRepository) GetByID(ctx context.Context, id uint) (*models.Task, error) {
+	var task models.Task
+	err := r.db.WithContext(ctx).Where("deleted_at IS NULL").First(&task, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrTaskNotFound
 	}
-	return &task, nil
+	return &task, err
 }
 
 func (r *taskRepository) Update(ctx context.Context, task *models.Task) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	now := time.Now()
+	task.UpdatedAt = &now
+
+	return r.db.WithContext(ctx).Model(task).
+		Select("Title", "Description", "Status", "UpdatedAt").
+		Updates(task).Error
+}
+
+func (r *taskRepository) Deactivate(ctx context.Context, id uint) error {
+	now := time.Now()
+	result := r.db.WithContext(ctx).
+		Model(&models.Task{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Update("deleted_at", now)
+
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errs.ErrTaskNotFound
+	}
+	return nil
 }
 
 func (r *taskRepository) Delete(ctx context.Context, id uint) error {
-	res := r.db.WithContext(ctx).Delete(&models.Task{}, id)
-	if res.Error != nil {
-		return res.Error
+	result := r.db.WithContext(ctx).Unscoped().Delete(&models.Task{}, id) 
+	if result.Error != nil {
+		return result.Error
 	}
-
-	if res.RowsAffected == 0 {
-		return ErrTaskNotFound
+	if result.RowsAffected == 0 {
+		return errs.ErrTaskNotFound
 	}
-
 	return nil
 }
