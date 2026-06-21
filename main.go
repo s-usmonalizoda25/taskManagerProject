@@ -43,17 +43,25 @@ func main() {
 		mainLog.Fatal("failed to connect to database", zap.Error(err))
 	}
 
-	err = db.AutoMigrate(&models.Task{})
+
+	err = db.AutoMigrate(&models.User{}, &models.Task{})
 	if err != nil {
 		mainLog.Fatal("failed to migrate database", zap.Error(err))
 	}
 	mainLog.Info("Database migration completed successfully!")
 
+
 	taskRepo := repository.NewTaskRepository(db)
 	taskService := service.NewTaskService(taskRepo, mainLog)
 	taskHandler := handlers.NewTaskHandler(taskService, mainLog)
 
-	appRouter := router.NewRouter(taskHandler)
+
+	userRepo := repository.NewUserRepository(db)
+	userService := service.NewUserService(userRepo, mainLog)
+	userHandler := handlers.NewUserHandler(userService, mainLog)
+
+	
+	appRouter := router.NewRouter(taskHandler, userHandler)
 
 	mainLog.Info("Server is running on port :8080...")
 	if err := http.ListenAndServe(":8080", appRouter); err != nil {

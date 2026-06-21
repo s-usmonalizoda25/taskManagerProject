@@ -13,11 +13,12 @@ import (
 type ITaskRepository interface {
 	Create(ctx context.Context, task *models.Task) error
 	GetActive(ctx context.Context, status string, limit, offset int) ([]models.Task, error)
-	GetAll(ctx context.Context, status string, limit, offset int) ([]models.Task, error)  
+	GetAll(ctx context.Context, status string, limit, offset int) ([]models.Task, error)
 	GetByID(ctx context.Context, id uint) (*models.Task, error)
 	Update(ctx context.Context, task *models.Task) error
 	Deactivate(ctx context.Context, id uint) error
-	Delete(ctx context.Context, id uint) error  
+	Delete(ctx context.Context, id uint) error
+	UpdateStatus(ctx context.Context, id uint, status models.TaskStatus) (*models.Task, error)
 }
 
 type taskRepository struct {
@@ -89,7 +90,7 @@ func (r *taskRepository) Deactivate(ctx context.Context, id uint) error {
 }
 
 func (r *taskRepository) Delete(ctx context.Context, id uint) error {
-	result := r.db.WithContext(ctx).Unscoped().Delete(&models.Task{}, id) 
+	result := r.db.WithContext(ctx).Unscoped().Delete(&models.Task{}, id)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -97,4 +98,27 @@ func (r *taskRepository) Delete(ctx context.Context, id uint) error {
 		return errs.ErrTaskNotFound
 	}
 	return nil
+}
+
+func (r *taskRepository) UpdateStatus(ctx context.Context, id uint, status models.TaskStatus) (*models.Task, error) {
+	now := time.Now()
+	var task models.Task
+
+	err := r.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errs.ErrTaskNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	task.Status = status
+	task.UpdatedAt = &now
+
+	err = r.db.WithContext(ctx).Model(&task).Select("Status", "UpdatedAt").Updates(&task).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &task, nil
 }

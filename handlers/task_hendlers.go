@@ -42,18 +42,28 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	allStr := r.URL.Query().Get("all")
 
-	page, _ := strconv.Atoi(pageStr)
-	limit, _ := strconv.Atoi(limitStr)
-
-	var tasks []models.Task
+	var page, limit int
 	var err error
 
+	if pageStr != "" {
+		if page, err = strconv.Atoi(pageStr); err != nil || page <= 0 {
+			http.Error(w, "invalid page parameter", http.StatusBadRequest)
+			return
+		}
+	}
+	if limitStr != "" {
+		if limit, err = strconv.Atoi(limitStr); err != nil || limit <= 0 {
+			http.Error(w, "invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var tasks []models.Task
 	if allStr == "true" {
 		tasks, err = h.service.GetAllTasks(r.Context(), status, page, limit)
 	} else {
 		tasks, err = h.service.GetActiveTasks(r.Context(), status, page, limit)
 	}
-
 	if err != nil {
 		HandleError(w, h.log, err)
 		return
@@ -139,4 +149,29 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "task hard-deleted from database"}`))
+}
+
+func (h *TaskHandler) PatchTaskStatus(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid task ID format", http.StatusBadRequest)
+		return
+	}
+
+	var input models.UpdateStatus
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	updatedTask, err := h.service.UpdateTaskStatus(r.Context(), uint(id), input.Status)
+	if err != nil {
+		HandleError(w, h.log, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(updatedTask)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/models"
 	"github.com/s-usmonalizoda25/taskManagerProject/internal/repository"
@@ -18,6 +19,7 @@ type ITaskService interface {
 	UpdateTask(ctx context.Context, id uint, input *models.Task) error
 	DeactivateTask(ctx context.Context, id uint) error
 	DeleteTask(ctx context.Context, id uint) error
+	UpdateTaskStatus(ctx context.Context, id uint, status models.TaskStatus) (*models.Task, error)
 }
 
 type taskService struct {
@@ -73,7 +75,7 @@ func (s *taskService) GetTaskByID(ctx context.Context, id uint) (*models.Task, e
 }
 
 func (s *taskService) UpdateTask(ctx context.Context, id uint, input *models.Task) error {
-	s.log.Info("Attempting to update task", zap.Uint("task_id", id))
+	s.log.Info("Attempting to update task", zap.String("task_id", strconv.FormatUint(uint64(id), 10)))
 	if id == 0 {
 		return errs.ErrInvalidID
 	}
@@ -86,9 +88,18 @@ func (s *taskService) UpdateTask(ctx context.Context, id uint, input *models.Tas
 		return err
 	}
 
+	if input.Status != "" {
+		if input.Status != models.StatusNew && input.Status != models.StatusDone && input.Status != models.StatusCanceled {
+			return errs.ErrInvalidStatus
+		}
+		task.Status = input.Status
+	}
+
 	task.Title = input.Title
 	task.Description = input.Description
-	task.Status = input.Status
+	if input.UserID != 0 {
+		task.UserID = input.UserID
+	}
 
 	return s.repo.Update(ctx, task)
 }
@@ -107,4 +118,18 @@ func (s *taskService) DeleteTask(ctx context.Context, id uint) error {
 		return errs.ErrInvalidID
 	}
 	return s.repo.Delete(ctx, id)
+}
+
+func (s *taskService) UpdateTaskStatus(ctx context.Context, id uint, status models.TaskStatus) (*models.Task, error) {
+	s.log.Info("Attempting to patch task status", zap.Uint("task_id", id), zap.String("status", string(status)))
+
+	if id == 0 {
+		return nil, errs.ErrInvalidID
+	}
+
+	if status != models.StatusNew && status != models.StatusDone && status != models.StatusCanceled {
+		return nil, errs.ErrInvalidStatus
+	}
+
+	return s.repo.UpdateStatus(ctx, id, status)
 }
